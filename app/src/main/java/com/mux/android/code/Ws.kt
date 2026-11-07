@@ -33,7 +33,7 @@ object Ws {
         Prefs.commit()
     }
 
-    fun setRoot(f: File) {
+    fun setWorkspaceRoot(f: File) {
         if (!f.isDirectory) return
         root = f
         tick++

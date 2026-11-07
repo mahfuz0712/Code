@@ -101,7 +101,7 @@ fun GitScreen() {
                         val dir = File(root, name)
                         if (File(dir, ".git").isDirectory) {
                             val h = android.os.Handler(android.os.Looper.getMainLooper())
-                            h.post { Ws.setRoot(dir) }
+                            h.post { Ws.setWorkspaceRoot(dir) }
                         }
                         r
                     }
