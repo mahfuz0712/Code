@@ -147,7 +147,7 @@ fun ExplorerScreen() {
             if (f.isDirectory) {
                 HudButton("NEW FILE HERE", Modifier.fillMaxWidth().height(42.dp), KeyKind.GOOD, fontSize = 12.sp) { prompt = Triple("file", f, ""); menu = null }
                 HudButton("NEW FOLDER HERE", Modifier.fillMaxWidth().height(42.dp), KeyKind.GOOD, fontSize = 12.sp) { prompt = Triple("folder", f, ""); menu = null }
-                HudButton("OPEN AS WORKSPACE", Modifier.fillMaxWidth().height(42.dp), KeyKind.ACCENT, fontSize = 12.sp) { Ws.setRoot(f); menu = null }
+                HudButton("OPEN AS WORKSPACE", Modifier.fillMaxWidth().height(42.dp), KeyKind.ACCENT, fontSize = 12.sp) { Ws.setWorkspaceRoot(f); menu = null }
                 HudButton("TERMINAL HERE", Modifier.fillMaxWidth().height(42.dp), KeyKind.OP, fontSize = 12.sp) {
                     Sessions.active.goTo(f.absolutePath); menu = null; Nav.tab = Nav.TERM
                 }
@@ -195,17 +195,17 @@ fun OpenFolderDialog(onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     var path by remember { mutableStateOf(Ws.root.absolutePath) }
     HudDialog("OPEN FOLDER", onDismiss) {
-        HudButton("APP WORKSPACE", Modifier.fillMaxWidth().height(42.dp), KeyKind.ACCENT, fontSize = 12.sp) { Ws.setRoot(File(Env.home)); onDismiss() }
+        HudButton("APP WORKSPACE", Modifier.fillMaxWidth().height(42.dp), KeyKind.ACCENT, fontSize = 12.sp) { Ws.setWorkspaceRoot(File(Env.home)); onDismiss() }
         HudButton("PHONE STORAGE (/sdcard)", Modifier.fillMaxWidth().height(42.dp), KeyKind.OP, fontSize = 12.sp) {
             val f = File(Env.SD)
-            if (f.canRead()) { Ws.setRoot(f); onDismiss() } else Util.toast(ctx, "GRANT ALL FILES ACCESS IN MORE > SET")
+            if (f.canRead()) { Ws.setWorkspaceRoot(f); onDismiss() } else Util.toast(ctx, "GRANT ALL FILES ACCESS IN MORE > SET")
         }
         Spacer(Modifier.height(6.dp))
         HudField(path, "/storage/emulated/0/MyProject", Modifier.fillMaxWidth().height(46.dp), onDone = {}) { path = it }
         Spacer(Modifier.height(6.dp))
         HudButton("OPEN THIS PATH", Modifier.fillMaxWidth().height(42.dp), KeyKind.GOOD, fontSize = 12.sp) {
             val f = File(path.trim())
-            if (f.isDirectory && f.canRead()) { Ws.setRoot(f); onDismiss() } else Util.toast(ctx, "CANNOT OPEN THAT FOLDER")
+            if (f.isDirectory && f.canRead()) { Ws.setWorkspaceRoot(f); onDismiss() } else Util.toast(ctx, "CANNOT OPEN THAT FOLDER")
         }
     }
 }
