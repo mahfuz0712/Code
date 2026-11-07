@@ -1,0 +1,10 @@
+{
+  "name": "Code",
+  "description": "VS Code style editor for Android: Monaco editor, file explorer, integrated terminal, git, VS Code themes and snippets, and an AI coding agent.",
+  "version": "1.0.0",
+  "ageRating": "3+",
+  "type": "app",
+  "containsAds": false,
+  "category": "Tools",
+  "author": "Mohammad Mahfuz Rahman"
+}

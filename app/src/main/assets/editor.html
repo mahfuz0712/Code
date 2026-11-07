@@ -1,0 +1,213 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+html,body{margin:0;height:100%;background:#040a12;overflow:hidden}
+#ed{position:absolute;left:0;top:0;right:0;bottom:0}
+#fb{position:absolute;left:0;top:0;width:100%;height:100%;box-sizing:border-box;background:#040a12;color:#d6f8ff;border:0;outline:0;padding:8px;font:13px monospace;resize:none;display:none;white-space:pre;overflow:auto}
+#msg{position:absolute;left:0;right:0;top:0;padding:6px 10px;font:11px monospace;color:#ffb000;background:#08141f;display:none;z-index:5}
+</style>
+<link rel="stylesheet" data-name="vs/editor/editor.main" href="monaco/vs/editor/editor.main.css">
+</head>
+<body>
+<div id="msg"></div>
+<div id="ed"></div>
+<textarea id="fb" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>
+<script>
+var A = window.Android || {log:function(){},ready:function(){},dirty:function(){},save:function(){},selection:function(){}};
+var MUX = {};
+var opts = {theme:'mux-cyan', fontSize:14, wordWrap:'off', minimap:false, tabSize:4, autoSave:false};
+var docs = {};
+var cur = null;
+var ed = null;
+var mode = 'none';
+var snipProviders = [];
+
+function say(t){ var m=document.getElementById('msg'); m.textContent=t; m.style.display=t?'block':'none'; }
+function stripHash(c){ return (c||'').replace('#',''); }
+
+/* ---------- VS Code theme -> Monaco theme ---------- */
+var SCOPE_MAP = [
+  ['comment','comment'],['string.regexp','regexp'],['string','string'],['constant.numeric','number'],
+  ['constant.language','keyword'],['constant.character','string'],['constant','constant'],
+  ['keyword.operator','operator'],['keyword','keyword'],['storage','keyword'],
+  ['entity.name.tag','tag'],['entity.other.attribute-name','attribute.name'],
+  ['entity.name.type','type'],['entity.name.class','type'],['support.class','type'],['support.type','type'],
+  ['entity.name.function','predefined'],['support.function','predefined'],
+  ['variable','variable'],['punctuation','delimiter'],['meta.tag','tag'],['invalid','invalid']
+];
+function convertTheme(t){
+  var rules=[];
+  (t.tokenColors||[]).forEach(function(tc){
+    var s=tc.settings||{}; var scopes=tc.scope; if(!scopes) { if(s.foreground) rules.push({token:'',foreground:stripHash(s.foreground)}); return; }
+    if(typeof scopes==='string') scopes=scopes.split(',');
+    scopes.forEach(function(sc){
+      sc=(sc||'').trim();
+      SCOPE_MAP.forEach(function(m){
+        if(sc===m[0]||sc.indexOf(m[0]+'.')===0){
+          var r={token:m[1]}; if(s.foreground) r.foreground=stripHash(s.foreground); if(s.fontStyle) r.fontStyle=s.fontStyle; rules.push(r);
+        }
+      });
+    });
+  });
+  var colors={};
+  var src=t.colors||{};
+  Object.keys(src).forEach(function(k){ var v=src[k]; if(typeof v==='string' && /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(v)) colors[k]=v; });
+  var base = t.type==='light'||t.type==='vs' ? 'vs' : (t.type==='hc'||t.type==='hc-black' ? 'hc-black' : 'vs-dark');
+  return {base:base,inherit:true,rules:rules,colors:colors};
+}
+
+/* ---------- Monaco ---------- */
+function defineHud(){
+  monaco.editor.defineTheme('mux-cyan',{base:'vs-dark',inherit:true,rules:[
+    {token:'comment',foreground:'3c8a99',fontStyle:'italic'},{token:'keyword',foreground:'ffb000'},{token:'string',foreground:'3ddc84'},
+    {token:'number',foreground:'ff8a80'},{token:'type',foreground:'19e3ff'},{token:'identifier',foreground:'d6f8ff'},
+    {token:'delimiter',foreground:'8cb0ff'},{token:'tag',foreground:'19e3ff'},{token:'attribute.name',foreground:'ffb000'},
+    {token:'attribute.value',foreground:'3ddc84'},{token:'regexp',foreground:'d66bff'},{token:'predefined',foreground:'84f2ff'}],
+    colors:{'editor.background':'#040a12','editor.foreground':'#d6f8ff','editorLineNumber.foreground':'#3c8a99','editorLineNumber.activeForeground':'#19e3ff',
+    'editor.lineHighlightBackground':'#08141f','editor.selectionBackground':'#19e3ff40','editorCursor.foreground':'#ffb000',
+    'editorWidget.background':'#08141f','editorSuggestWidget.background':'#08141f','editorIndentGuide.background':'#19e3ff20','editorIndentGuide.background1':'#19e3ff20',
+    'minimap.background':'#040a12','scrollbarSlider.background':'#19e3ff30'}});
+  monaco.editor.defineTheme('mux-amber',{base:'vs-dark',inherit:true,rules:[
+    {token:'comment',foreground:'a6732a',fontStyle:'italic'},{token:'keyword',foreground:'19e3ff'},{token:'string',foreground:'3ddc84'},
+    {token:'number',foreground:'ff8a80'},{token:'type',foreground:'ffa726'},{token:'identifier',foreground:'ffebd0'},
+    {token:'delimiter',foreground:'e0b070'},{token:'tag',foreground:'ffa726'},{token:'attribute.name',foreground:'19e3ff'},
+    {token:'attribute.value',foreground:'3ddc84'},{token:'regexp',foreground:'d66bff'},{token:'predefined',foreground:'ffd180'}],
+    colors:{'editor.background':'#0d0804','editor.foreground':'#ffebd0','editorLineNumber.foreground':'#a6732a','editorLineNumber.activeForeground':'#ffa726',
+    'editor.lineHighlightBackground':'#1a1008','editor.selectionBackground':'#ffa72640','editorCursor.foreground':'#19e3ff',
+    'editorWidget.background':'#1a1008','editorSuggestWidget.background':'#1a1008','editorIndentGuide.background':'#ffa72620','editorIndentGuide.background1':'#ffa72620',
+    'minimap.background':'#0d0804','scrollbarSlider.background':'#ffa72630'}});
+}
+
+function startMonaco(){
+  mode='monaco';
+  defineHud();
+  ed = monaco.editor.create(document.getElementById('ed'),{
+    model:null, theme:opts.theme, automaticLayout:true, fontSize:opts.fontSize, fontFamily:'monospace',
+    minimap:{enabled:opts.minimap}, wordWrap:opts.wordWrap, tabSize:opts.tabSize, scrollBeyondLastLine:false,
+    renderWhitespace:'selection', bracketPairColorization:{enabled:true}, padding:{top:6}, smoothScrolling:true
+  });
+  ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.KeyS,function(){ MUX.requestSave(cur); });
+  A.ready();
+}
+
+function fallback(){
+  mode='fallback';
+  say('Monaco not found in app assets: simple editor is used. Build with scripts/fetch-monaco.sh');
+  var fb=document.getElementById('fb'); fb.style.display='block'; fb.style.top='24px'; fb.style.height='calc(100% - 24px)';
+  fb.addEventListener('input',function(){ if(cur&&docs[cur]){ docs[cur].text=fb.value; A.dirty(cur,true); }});
+  A.ready();
+}
+
+(function load(){
+  var s=document.createElement('script');
+  s.src='monaco/vs/loader.js';
+  s.onload=function(){
+    var base=location.origin+'/assets/monaco/';
+    require.config({paths:{vs:base+'vs'}});
+    window.MonacoEnvironment={getWorkerUrl:function(){
+      return 'data:text/javascript;charset=utf-8,'+encodeURIComponent("self.MonacoEnvironment={baseUrl:'"+base+"'};importScripts('"+base+"vs/base/worker/workerMain.js');");
+    }};
+    require(['vs/editor/editor.main'],startMonaco,fallback);
+  };
+  s.onerror=fallback;
+  document.head.appendChild(s);
+})();
+
+/* ---------- API used by the app ---------- */
+MUX.open=function(path,text,lang){
+  if(mode==='fallback'){ if(!docs[path]) docs[path]={text:text,saved:text}; MUX.show(path); return; }
+  if(mode!=='monaco') return;
+  var d=docs[path];
+  if(!d){
+    var m=monaco.editor.createModel(text,lang||undefined,monaco.Uri.file(path));
+    d={model:m,saved:m.getAlternativeVersionId(),view:null,t:null};
+    m.onDidChangeContent(function(){
+      var dirty=m.getAlternativeVersionId()!==d.saved;
+      A.dirty(path,dirty);
+      if(dirty&&opts.autoSave){ clearTimeout(d.t); d.t=setTimeout(function(){ MUX.requestSave(path); },1200); }
+    });
+    docs[path]=d;
+  }
+  MUX.show(path);
+};
+MUX.show=function(path){
+  if(mode==='fallback'){ cur=path; var f=document.getElementById('fb'); f.value=docs[path]?docs[path].text:''; return; }
+  if(mode!=='monaco') return;
+  if(cur&&docs[cur]&&ed.getModel()===docs[cur].model) docs[cur].view=ed.saveViewState();
+  cur=path;
+  var d=docs[path]; if(!d) return;
+  ed.setModel(d.model);
+  if(d.view) ed.restoreViewState(d.view);
+};
+MUX.requestSave=function(path){
+  path=path||cur; var d=docs[path]; if(!d) return;
+  if(mode==='fallback'){ A.save(path,d.text,'0'); return; }
+  A.save(path,d.model.getValue(),String(d.model.getAlternativeVersionId()));
+};
+MUX.markSaved=function(path,ver){
+  var d=docs[path]; if(!d) return;
+  if(mode==='fallback'){ d.saved=d.text; A.dirty(path,false); return; }
+  d.saved=Number(ver); A.dirty(path,d.model.getAlternativeVersionId()!==d.saved);
+};
+MUX.close=function(path){
+  var d=docs[path]; if(!d) return;
+  if(mode==='monaco'){ if(cur===path){ ed.setModel(null); cur=null; } d.model.dispose(); }
+  if(cur===path) cur=null;
+  delete docs[path];
+};
+MUX.reload=function(path,text){
+  var d=docs[path]; if(!d) return;
+  if(mode==='fallback'){ d.text=text; d.saved=text; if(cur===path) document.getElementById('fb').value=text; A.dirty(path,false); return; }
+  d.model.setValue(text); d.saved=d.model.getAlternativeVersionId(); A.dirty(path,false);
+};
+MUX.goto=function(line,col){
+  if(mode!=='monaco'||!ed) return;
+  ed.revealLineInCenter(line); ed.setPosition({lineNumber:line,column:col||1});
+};
+MUX.setOptions=function(o){
+  for(var k in o) opts[k]=o[k];
+  if(mode==='monaco'&&ed){
+    monaco.editor.setTheme(opts.theme);
+    ed.updateOptions({fontSize:opts.fontSize,wordWrap:opts.wordWrap,minimap:{enabled:opts.minimap},tabSize:opts.tabSize});
+  } else if(mode==='fallback'){
+    document.getElementById('fb').style.fontSize=opts.fontSize+'px';
+  }
+};
+MUX.trigger=function(id){ if(mode==='monaco'&&ed){ ed.focus(); ed.trigger('mux',id,null); } };
+MUX.type=function(t){ if(mode==='monaco'&&ed){ ed.focus(); ed.trigger('mux','type',{text:t}); } };
+MUX.key=function(k){
+  var map={left:'cursorLeft',right:'cursorRight',up:'cursorUp',down:'cursorDown',tab:'tab',outdent:'outdent',home:'cursorHome',end:'cursorEnd'};
+  if(mode==='monaco'&&ed&&map[k]){ ed.focus(); ed.trigger('mux',map[k],null); }
+};
+MUX.selection=function(){
+  var s='';
+  if(mode==='monaco'&&ed&&ed.getModel()) s=ed.getModel().getValueInRange(ed.getSelection());
+  A.selection(s,cur||'');
+};
+MUX.loadExtensions=function(x){
+  if(mode!=='monaco') return;
+  (x.themes||[]).forEach(function(t){ try{ monaco.editor.defineTheme(t.id,convertTheme(t)); }catch(e){ A.log('theme '+t.id+': '+e); } });
+  snipProviders.forEach(function(p){ p.dispose(); }); snipProviders=[];
+  (x.snippets||[]).forEach(function(sn){
+    var items=[];
+    Object.keys(sn.snippets||{}).forEach(function(name){
+      var e=sn.snippets[name]; var pre=e.prefix; if(!pre) return; if(typeof pre==='string') pre=[pre];
+      var body=Array.isArray(e.body)?e.body.join('\n'):String(e.body||'');
+      pre.forEach(function(p){ items.push({prefix:p,desc:e.description||name,body:body}); });
+    });
+    if(!items.length) return;
+    try{
+      snipProviders.push(monaco.languages.registerCompletionItemProvider(sn.lang,{provideCompletionItems:function(model,pos){
+        var w=model.getWordUntilPosition(pos);
+        var r={startLineNumber:pos.lineNumber,endLineNumber:pos.lineNumber,startColumn:w.startColumn,endColumn:w.endColumn};
+        return {suggestions:items.map(function(i){ return {label:i.prefix,kind:monaco.languages.CompletionItemKind.Snippet,documentation:i.desc,insertText:i.body,insertTextRules:monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,range:r}; })};
+      }}));
+    }catch(e){ A.log('snippets '+sn.lang+': '+e); }
+  });
+};
+</script>
+</body>
+</html>

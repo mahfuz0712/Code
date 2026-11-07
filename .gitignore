@@ -1,0 +1,4 @@
+app/src/main/assets/monaco/
+build/
+.gradle/
+local.properties
